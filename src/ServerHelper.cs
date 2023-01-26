@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Management;
 using System.Net.NetworkInformation;
 using RestSharp;
 
@@ -26,7 +27,6 @@ namespace CSharpGalenWrapper
             {
 
                 var serverUp = false;
-
                 while (!serverUp)
                 {
                     ValidateIfServerProcessIsRunning(); 
@@ -76,6 +76,7 @@ namespace CSharpGalenWrapper
                 .Where(i => !tcpConnectionPorts.Contains(i))
                 .Where(i => !tcpListenerPorts.Contains(i))
                 .Where(i => !udpListenerPorts.Contains(i))
+                .Skip((new Random()).Next(100,1000)) // an attempt to solve `The Port is in use` issue
                 .FirstOrDefault();
 
             return port;
@@ -95,8 +96,34 @@ namespace CSharpGalenWrapper
 
         internal static void StopGalenServer()
         {
-            _process.Kill();
+            KillProcessAndChildren(_process.Id);
             //return response;
+        }
+        
+        //taken from https://stackoverflow.com/questions/63668951/how-to-close-all-child-processes-in-c-sharp
+        private static void KillProcessAndChildren(int pid)
+        {
+            // Cannot close 'system idle process'.
+            if (pid == 0)
+            {
+                return;
+            }
+            ManagementObjectSearcher searcher = new ManagementObjectSearcher
+                ("Select * From Win32_Process Where ParentProcessID=" + pid);
+            ManagementObjectCollection moc = searcher.Get();
+            foreach (ManagementObject mo in moc)
+            {
+                KillProcessAndChildren(Convert.ToInt32(mo["ProcessID"]));
+            }
+            try
+            {
+                Process proc = Process.GetProcessById(pid);
+                proc.Kill();
+            }
+            catch (Exception ex)
+            {
+                // Process already exited.
+            }
         }
     }
 }
